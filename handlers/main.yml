@@ -1,0 +1,4 @@
+---
+- name: Reload dns-collector systemd
+  systemd:
+    daemon_reload: yes

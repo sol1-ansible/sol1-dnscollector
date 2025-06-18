@@ -1,0 +1,5 @@
+---
+
+- name: Install DNS Collector
+  include_tasks: install.yml
+

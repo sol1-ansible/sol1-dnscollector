@@ -1,0 +1,116 @@
+---
+- name: Determine if we should use latest release
+  set_fact:
+    use_latest_release: "{{ dns_collector_version | default('latest') == 'latest' }}"
+
+- name: Get latest release metadata from GitHub
+  uri:
+    url: https://api.github.com/repos/dmachard/DNS-collector/releases/latest
+    return_content: yes
+  register: github_release
+  when: use_latest_release
+
+- name: Set version from latest release
+  set_fact:
+    resolved_dns_collector_version: "{{ github_release.json.tag_name }}"
+  when: use_latest_release
+
+- name: Use specified version
+  set_fact:
+    resolved_dns_collector_version: "{{ dns_collector_version }}"
+  when: not use_latest_release
+
+- name: Get release metadata for specified version
+  uri:
+    url: "https://api.github.com/repos/dmachard/DNS-collector/releases/tags/{{ resolved_dns_collector_version }}"
+    return_content: yes
+  register: release_metadata
+
+- name: Find Linux amd64 asset download URL
+  set_fact:
+    dns_collector_asset_url: >-
+      {{ release_metadata.json.assets
+        | selectattr('name', 'search', 'linux_amd64')
+        | map(attribute='browser_download_url')
+        | list | first }}
+
+- name: Ensure dnscollector group exists
+  group:
+    name: dnscollector
+    system: yes
+
+- name: Ensure dnscollector user exists
+  user:
+    name: dnscollector
+    group: dnscollector
+    shell: /usr/sbin/nologin
+    system: yes
+    create_home: no
+
+- name: Create install directory
+  file:
+    path: "{{ dns_collector_install_dir }}"
+    state: directory
+    mode: '0755'
+    owner: dnscollector
+    group: dnscollector
+
+- name: Download url
+  debug:
+    msg: "{{ dns_collector_asset_url }}"
+
+- name: Download DNS-collector archive
+  ansible.builtin.get_url:
+    url: "{{ dns_collector_asset_url }}"
+    dest: "{{ dns_collector_install_dir }}/dns-collector-{{ dns_collector_version }}.tar.gz"
+    mode: '0644'
+
+- name: Unpack DNS-collector binary
+  ansible.builtin.unarchive:
+    src: "{{ dns_collector_install_dir }}/dns-collector-{{ dns_collector_version }}.tar.gz"
+    dest: "{{ dns_collector_install_dir }}"
+    remote_src: yes
+    mode: '0755'
+
+- name: Ensure config directory exists
+  file:
+    path: "{{ dns_collector_config_dir }}"
+    state: directory
+    mode: '0755'
+    owner: dnscollector
+    group: dnscollector
+
+- name: Deploy DNS-collector config
+  template:
+    src: config.yml.j2
+    dest: "{{ dns_collector_config_dir }}/config.yml"
+    owner: dnscollector
+    group: dnscollector
+    mode: 0644
+
+- name: Install dns-collector systemd unit
+  copy:
+    dest: /etc/systemd/system/dns-collector.service
+    content: |
+      [Unit]
+      Description=DNS Collector Service
+      After=network.target
+
+      [Service]
+      ExecStart={{ dns_collector_install_dir }}/dnscollector -config {{ dns_collector_config_dir }}/config.yml
+      WorkingDirectory={{ dns_collector_install_dir }}
+      Restart=on-failure
+      RestartSec=5s
+      User=dnscollector
+      Group=dnscollector
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  notify: Reload dns-collector systemd
+
+- name: Enable and start dns-collector
+  systemd:
+    name: dns-collector
+    enabled: yes
+    state: started  

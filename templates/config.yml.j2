@@ -1,0 +1,10 @@
+# ================================
+# This outputs exactly two top-level keys: “global:” and “pipelines:”.
+# We assume `dnscollector_global` is a dict of everything under global,
+# and `dnscollector_pipelines` is a list of pipeline‐blocks.
+
+global:
+  {{ dns_collector_config_global | to_nice_yaml(width=9999, indent=2) | indent(2) }}
+
+pipelines:
+  {{ dns_collector_config_pipelines | to_nice_yaml(width=9999, indent=2) | indent(2) }}

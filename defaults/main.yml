@@ -1,42 +1,64 @@
 ---
-###############################################################################
-# BASIC SETTINGS (adjust per host / environment)
-###############################################################################
-
-# dns-collector version and install paths
-dns_collector_version: latest
+dns_collector_version: latest  
+# dns_collector_version: v0.2.8
 dns_collector_install_dir: "/opt/dns-collector/"
 dns_collector_config_dir: "/etc/dns-collector/"
 
-# DNSTap listener – dnsdist will connect here
-dns_collector_listen_ip: 127.0.0.1
-dns_collector_listen_port: 6000
+# Adding these here to make it easy to set these values indepentantly from pipeline var templates below
+dns_collector_config_listen_ip: 0.0.0.0
+dns_collector_config_listen_port: 6000
 
-# Loki destination - override in your playbook!
-dns_collector_loki_url: "http://192.168.10.14:3100/loki/api/v1/push"
-dns_collector_loki_job: "dnscollector"
 
-# Text format string (see `dns-collector --help`)
-dns_collector_loki_text_format: >
-  localtime identity qr queryip family protocol qname qtype rcode
-
-###############################################################################
-# ADVANCED – tweak only if you need more collectors / loggers / routes
-###############################################################################
-
-dns_collector_collector_name: tap
-dns_collector_logger_name:    loki
-
-# You *can* override these to build multi-collector setups,
-# but single-collector is fine for 99 % of installations.
-dns_collector_routes:
-  - from: ["{{ dns_collector_collector_name }}"]
-    to:   ["{{ dns_collector_logger_name }}"]
-
-###############################################################################
-# “global:” block – extend/override just like any other dict
-###############################################################################
-dns_collector_global:
+# global config
+dns_collector_config_global:
   trace:
     verbose: true
 
+# pipeline config (inheriting a pipeline var template)
+dns_collector_config_pipelines: "{{ dns_collector_config_pipeline_filter_problems }}"
+
+# pipeline var templates
+dns_collector_config_pipeline_filter_problems:
+  # Listen on tcp/6000 for incoming DNSTap protobuf messages from dns servers
+  - name: dnsdist_in
+    dnstap:
+      listen-ip: "{{ dns_collector_config_listen_ip }}"
+      listen-port: "{{ dns_collector_config_listen_port }}"
+    transforms:
+      normalize:
+        qname-lowercase: true
+        qname-replace-nonprintable: true
+      latency:
+        measure-latency: true
+    routing-policy:
+      forward: [ filter-slow, filter-errors ]
+      dropped: []
+
+  # keep only slow responses
+  - name: filter-slow
+    dnsmessage:
+      matching:
+        include:
+          dnstap.operation: "CLIENT_RESPONSE"
+          dnstap.latency:
+            greater-than: 0.2
+    routing-policy:
+      forward: [ console-stderr ]
+
+  # keep only DNS errors responses (discard NOERROR and NXDOMAINS)
+  - name: filter-errors
+    dnsmessage:
+      matching:
+        include:
+          dnstap.operation: "CLIENT_RESPONSE"
+        exclude:
+          dns.rcode:
+            - NOERROR
+            - NXDOMAIN
+    routing-policy:
+      forward: [ console-stderr ]
+
+  # Output to file
+  - name: console-stderr
+    stdout:
+      mode: "text"

@@ -1,24 +1,10 @@
-# Rendered by Ansible – dns-collector configuration
-# Learns everything from defaults/main.yml (overridable in inventory)
+# ================================
+# This outputs exactly two top-level keys: “global:” and “pipelines:”.
+# We assume `dnscollector_global` is a dict of everything under global,
+# and `dnscollector_pipelines` is a list of pipeline‐blocks.
 
 global:
-  {{ dns_collector_global | to_nice_yaml(indent=2, width=9999) | indent(2) }}
+  {{ dns_collector_config_global | to_nice_yaml(width=9999, indent=2) | indent(2) }}
 
-multiplexer:
-  collectors:
-    - name: "{{ dns_collector_collector_name }}"
-      dnstap:
-        listen-ip:   "{{ dns_collector_listen_ip }}"
-        listen-port: "{{ dns_collector_listen_port }}"
-
-  loggers:
-    - name: "{{ dns_collector_logger_name }}"
-      lokiclient:
-        server-url:  "{{ dns_collector_loki_url }}"
-        job-name:    "{{ dns_collector_loki_job }}"
-        mode:        text
-        text-format: "{{ dns_collector_loki_text_format }}"
-
-  routes:
-    {{ dns_collector_routes | to_nice_yaml(indent=2, width=9999) | indent(4) }}
-
+pipelines:
+  {{ dns_collector_config_pipelines | to_nice_yaml(width=9999, indent=2) | indent(2) }}

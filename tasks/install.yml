@@ -113,5 +113,4 @@
   systemd:
     name: dns-collector
     enabled: yes
-    state: started
-
+    state: started  

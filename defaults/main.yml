@@ -17,7 +17,13 @@ dns_collector_config_global:
 # pipeline config (inheriting a pipeline var template)
 dns_collector_config_pipelines: "{{ dns_collector_config_pipeline_filter_problems }}"
 
-# pipeline var templates
+
+### pipeline vars templates
+## variables used in predefined pipeline var templates
+dns_collector_config_loki_url: "http://loki:3100/loki/api/v1/push"
+
+## choose a template and assign to dns_collector_config_pipelines above if you don't want to define your own custom pipeline
+# pipeline template for filter problems
 dns_collector_config_pipeline_filter_problems:
   # Listen on tcp/6000 for incoming DNSTap protobuf messages from dns servers
   - name: dnsdist_in
@@ -62,3 +68,26 @@ dns_collector_config_pipeline_filter_problems:
   - name: console-stderr
     stdout:
       mode: "text"
+
+dns_collector_config_pipeline_loki:
+  # Listen on tcp/6000 for incoming DNSTap protobuf messages from dns servers
+  - name: dnsdist_in
+    dnstap:
+      listen-ip: "{{ dns_collector_config_listen_ip }}"
+      listen-port: "{{ dns_collector_config_listen_port }}"
+    # Routes DNS messages from the tap collector to loki with some transformations
+    transforms:
+      normalize:
+        qname-lowercase: true
+        qname-replace-nonprintable: true
+      latency:
+        measure-latency: true
+    routing-policy:
+      forward: [ loki ]
+
+  # Sends DNS messages to loki instance in text format
+  - name: loki
+    lokiclient:
+      server-url: "{{ dns_collector_config_loki_url }}"
+      job-name: "dnscollector"
+      text-format: "localtime identity qr queryip family protocol qname qtype rcode"
